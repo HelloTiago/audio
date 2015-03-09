@@ -12,7 +12,7 @@ class Waveform
      * @var Track
      */
     protected $track;
-    
+
     /**
      * Image width
      * @var int
@@ -48,19 +48,18 @@ class Waveform
      * @var int
      */
     public $offset;
-    
+
     /**
      * The duration to chart (in seconds)
      * @var int
      */
     public $duration;
-    
+
     /**
      * The path of the generated png
      * @var string
      */
     public $path = null;
-    
 
     /**
      * Audio samples
@@ -73,23 +72,23 @@ class Waveform
      * @var float
      */
     protected $length;
-    
-    
+
+
     /**
      * Class constructor
-     * 
+     *
      * @param Track|string $track     Input track
      * @param array        $settings  Associated array with settings
      */
     public function __construct($track, array $settings=array())
     {
         if (isset($settings['count']) && !isset($settings['width'])) $settings['width'] = $settings['count'];
-        
+
         foreach ($settings as $key=>$value) {
             if (!property_exists($this, $key)) continue;
             $this->$key = $value;
         }
-        
+
         $this->track = $track instanceof Track ? $track : new Track($track);
     }
 
@@ -103,10 +102,10 @@ class Waveform
         return $this->track;
     }
 
-    
+
     /**
      * Calculate the samples.
-     * 
+     *
      * @return array
      */
     protected function calc()
@@ -121,30 +120,30 @@ class Waveform
         if ($this->offset || $this->duration) {
             $offset = $this->offset >= 0 ? $this->offset : $length + $this->offset;
             $trim = $offset . ($this->duration ? " " . (float)$this->duration : '');
-            
+
             $newlength = $this->duration ?: $length - $offset;
             $sample_count = floor(($newlength / $length) * $sample_count);
             $length = $newlength;
         }
-        
+
         // Downsample to max 500 samples per pixel with a minimum sample rate of 4k/s
         if ($sample_count / $this->width > 500) {
             $rate = max(($this->width / $length) * 500, 4000);
             $sample_count = $rate * $length;
         }
-        
+
         $this->length = $length;
-        
+
         $this->samples = $this->calcExecute($sample_count, $trim, $rate);
-        
+
         if (!isset($this->level)) {
             $this->level = max(-1 * min($this->samples), max($this->samples));
         }
     }
-    
+
     /**
      * Calculate the samples
-     * 
+     *
      * @param int $sample_count
      * @param string $trim
      * @param float  $rate
@@ -156,32 +155,32 @@ class Waveform
         if ($trim) $trim = "trim $trim";
         $resample = $rate ? "-r $rate" : '';
         $chunk_size = floor($sample_count / $this->width);
-        
+
         $descriptorspec = array(
            1 => array("pipe", "w"), // stdout
            2 => array("pipe", "w")  // stderr
         );
-        
+
         $sox = escapeshellcmd(Track::which('sox'));
-        
+
         $handle = proc_open("$sox $track -t raw $resample -c 1 -e floating-point -L - $trim", $descriptorspec, $pipes);
         if (!$handle) throw new \Exception("Failed to get the samples using sox");
 
         $chunk = array();
         $samples = array();
-        
+
         while ($data = fread($pipes[1], 4 * $chunk_size)) {
             $chunk = unpack('f*', $data);
             $chunk[] = 0;
             $samples[] = min($chunk);
             $samples[] = max($chunk);
         };
-        
+
         $err = stream_get_contents($pipes[2]);
-        
+
         $ret = proc_close($handle);
         if ($ret != 0) throw new \Exception("Sox command failed. " . trim($err));
-                
+
         return $samples;
     }
 
@@ -218,7 +217,7 @@ class Waveform
         return $this->level;
     }
 
-    
+
     /**
      * Plot the waveform
      *
@@ -227,7 +226,7 @@ class Waveform
     public function plot()
     {
         $this->getSamples();
-        
+
         $im = imagecreatetruecolor($this->width, $this->height);
         imagesavealpha($im, true);
         imagefill($im, 0, 0, imagecolorallocatealpha($im, 0, 0, 0, 127));
@@ -235,18 +234,18 @@ class Waveform
         $center = ($this->height / 2);
         $scale = ($center / $this->level);
         $color = self::strToColor($im, $this->color);
-        
+
         for ($i = 0, $n = count($this->samples); $i < $n-1; $i += 2) {
             $max = $center + (-1 * $this->samples[$i] * $scale);
             $min = $center + (-1 * $this->samples[$i+1] * $scale);
-            
+
             imageline($im, $i / 2, $min, $i / 2, $max, $color);
         }
-        
+
         if (!empty($this->axis)) {
             imageline($im, 0, $this->height / 2, $this->width, $this->height / 2, self::strToColor($im, $this->axis));
         }
-        
+
         return $im;
     }
 
@@ -260,7 +259,7 @@ class Waveform
     protected static function strToColor($im, $color)
     {
         $color = ltrim($color, '#');
-        
+
         if (strpos($color, ',') !== false) {
             list($red, $green, $blue, $opacity) = explode(',', $color) + [3 => null];
         } else {
@@ -269,7 +268,7 @@ class Waveform
             $blue = hexdec(substr($color, 4, 2));
             $opacity = 1;
         }
-        
+
         $alpha = round((1 - $opacity) * 127);
         return imagecolorallocatealpha($im, $red, $green, $blue, $alpha);
     }
@@ -277,30 +276,26 @@ class Waveform
 
     /**
      * Output the generated waveform
-     * 
+     *
      * @param string $format  Options: png or json
      */
     public function output($format='png')
     {
         $fn = "output$format";
         if (!method_exists($this, $fn)) throw new \Exception("Unknown format '$format'");
-        
+
         $this->$fn();
     }
-    
+
     /**
      * Output the generated waveform as PNG
      */
     protected function outputPng()
     {
         $im = $this->plot();
-        
-        header("X-Waveform-Length: {$this->length}");
-        header("X-Waveform-Level: {$this->level}");
-        header('Content-Type: image/png');
-        imagepng($im);
+        imagepng($im, $this->path);
     }
-    
+
     /**
      * Output the generated waveform as JSON
      */
