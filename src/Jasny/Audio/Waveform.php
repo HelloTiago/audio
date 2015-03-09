@@ -55,6 +55,12 @@ class Waveform
      */
     public $duration;
     
+    /**
+     * The path of the generated png
+     * @var string
+     */
+    public $path = null;
+    
 
     /**
      * Audio samples
