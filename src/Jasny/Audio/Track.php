@@ -13,13 +13,13 @@ class Track
      * sox executable
      * @var string
      */
-    public static $sox = '/usr/local/bin/sox';
+    public static $sox = '/usr/bin/sox';
 
     /**
      * soxi executable
      * @var string
      */
-    public static $soxi = '/usr/local/bin/soxi';
+    public static $soxi = '/usr/bin/soxi';
 
     /**
      * avconv or ffmpeg executable
